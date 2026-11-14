@@ -1,0 +1,282 @@
+
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student Attendance Scanner</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 18px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+    .container {
+      max-width: 520px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 4px 18px #00000012;
+    }
+    h2 { text-align: center; margin: 0 0 8px; }
+    .subtitle {
+      text-align: center;
+      color: #64748b;
+      margin-bottom: 18px;
+    }
+    #reader {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    button {
+      flex: 1;
+      border: 0;
+      padding: 13px 10px;
+      border-radius: 9px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+    }
+    #startBtn { background: #15803d; }
+    #stopBtn { background: #dc2626; }
+    button:disabled { opacity: .5; }
+    #status {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 9px;
+      background: #e2e8f0;
+      text-align: center;
+      font-weight: bold;
+    }
+    .student {
+      margin-top: 15px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      line-height: 1.8;
+    }
+    .success { background: #dcfce7 !important; color: #166534; }
+    .warning { background: #fef3c7 !important; color: #92400e; }
+    .error { background: #fee2e2 !important; color: #991b1b; }
+    .muted { color: #64748b; font-size: 13px; text-align: center; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h2>Student Attendance</h2>
+    <div class="subtitle">Continuous QR Code Scanner</div>
+
+    <div id="reader"></div>
+
+    <div class="buttons">
+      <button id="startBtn" onclick="startScanner()">Start Camera</button>
+      <button id="stopBtn" onclick="stopScanner()" disabled>Stop Camera</button>
+    </div>
+
+    <div id="status">ক্যামেরা চালু করতে Start Camera চাপুন।</div>
+
+    <div id="studentBox" class="student" style="display:none;"></div>
+    <p class="muted">একবার স্ক্যান হলে আবার স্ক্যান করার জন্য QR কোডটি ক্যামেরার সামনে ধরুন।</p>
+  </div>
+
+<script>
+  // তোমার Apps Script Web App URL
+  const SCRIPT_URL =
+    "https://script.google.com/macros/s/AKfycbyDwZbKf79xal4NfSLdWbjhFkWVNSp4xUp6X2l_dpr0v-IQGaWGPiilQwXnWqO5RZ-v/exec";
+
+  let scanner = null;
+  let running = false;
+  let processing = false;
+  let lastScan = "";
+  let lastScanTime = 0;
+
+  const statusBox = document.getElementById("status");
+  const studentBox = document.getElementById("studentBox");
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+
+  function setStatus(message, type = "") {
+    statusBox.textContent = message;
+    statusBox.className = type;
+  }
+
+  function beep() {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const audio = new AudioContext();
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+      oscillator.frequency.value = 1000;
+      gain.gain.value = 0.15;
+      oscillator.start();
+
+      setTimeout(() => {
+        oscillator.stop();
+        audio.close();
+      }, 180);
+    } catch (e) {}
+  }
+
+  function scanWithServer(studentId) {
+    return new Promise((resolve, reject) => {
+      const callbackName =
+        "attendanceCallback_" + Date.now() + "_" +
+        Math.floor(Math.random() * 100000);
+
+      const script = document.createElement("script");
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("সার্ভার থেকে উত্তর পাওয়া যায়নি।"));
+      }, 20000);
+
+      function cleanup() {
+        clearTimeout(timeout);
+        delete window[callbackName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+
+      window[callbackName] = function(result) {
+        cleanup();
+        resolve(result);
+      };
+
+      script.onerror = function() {
+        cleanup();
+        reject(new Error("Google Apps Script সংযোগ করা যায়নি।"));
+      };
+
+      script.src =
+        SCRIPT_URL +
+        "?action=scan" +
+        "&studentId=" + encodeURIComponent(studentId) +
+        "&callback=" + encodeURIComponent(callbackName);
+
+      document.body.appendChild(script);
+    });
+  }
+
+  async function onScanSuccess(decodedText) {
+    const studentId = String(decodedText || "").trim();
+    if (!studentId || processing) return;
+
+    const now = Date.now();
+    if (studentId === lastScan && now - lastScanTime < 4000) return;
+
+    processing = true;
+    lastScan = studentId;
+    lastScanTime = now;
+
+    setStatus("উপস্থিতি যাচাই করা হচ্ছে...", "");
+    studentBox.style.display = "none";
+
+    try {
+      const result = await scanWithServer(studentId);
+
+      if (!result || !result.success) {
+        setStatus(result?.message || "উপস্থিতি নেওয়া যায়নি।", "error");
+        return;
+      }
+
+      studentBox.style.display = "block";
+      studentBox.innerHTML =
+        "<b>নাম:</b> " + escapeHtml(result.name) + "<br>" +
+        "<b>রোল:</b> " + escapeHtml(result.roll) + "<br>" +
+        "<b>শ্রেণি:</b> " + escapeHtml(result.studentClass) + "<br>" +
+        "<b>তারিখ:</b> " + escapeHtml(result.date);
+
+      if (result.duplicate) {
+        setStatus("⚠️ " + result.message, "warning");
+      } else {
+        setStatus("✅ " + result.message, "success");
+        beep();
+      }
+
+    } catch (error) {
+      setStatus("সমস্যা: " + error.message, "error");
+    } finally {
+      setTimeout(() => {
+        processing = false;
+      }, 1200);
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[char]);
+  }
+
+  async function startScanner() {
+    if (running) return;
+
+    if (!window.Html5Qrcode) {
+      setStatus("QR Scanner লাইব্রেরি লোড হয়নি। ইন্টারনেট পরীক্ষা করুন।", "error");
+      return;
+    }
+
+    scanner = new Html5Qrcode("reader");
+
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1
+        },
+        onScanSuccess,
+        () => {}
+      );
+
+      running = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      setStatus("ক্যামেরা চালু হয়েছে। QR কোড স্ক্যান করুন।", "success");
+
+    } catch (error) {
+      setStatus("ক্যামেরা চালু হয়নি: " + error, "error");
+      scanner = null;
+    }
+  }
+
+  async function stopScanner() {
+    if (!scanner || !running) return;
+
+    try {
+      await scanner.stop();
+      await scanner.clear();
+    } catch (error) {}
+
+    scanner = null;
+    running = false;
+    processing = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    setStatus("ক্যামেরা বন্ধ আছে।");
+  }
+</script>
+</body>
+</html>
