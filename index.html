@@ -409,28 +409,26 @@
   }
 
 
-  // Start Camera
+  // Start Camera - MOBILE BACK CAMERA
   async function startCamera() {
 
     if (cameraRunning) return;
 
     try {
 
-      setStatus("ক্যামেরা চালু হচ্ছে...", "#ffeb3b");
+      setStatus("মোবাইলের Back Camera চালু হচ্ছে...", "#ffeb3b");
 
       scanner = new Html5Qrcode("reader");
 
       await scanner.start(
 
-        // Laptop-এর সামনের ক্যামেরা
-        { facingMode: "user" },
+        // মোবাইলের পেছনের ক্যামেরা
+        { facingMode: "environment" },
 
         {
 
-          // আগের 12 থেকে 20 করা হয়েছে
           fps: 20,
 
-          // ছোট QR Scan Area
           qrbox: function(
             viewfinderWidth,
             viewfinderHeight
@@ -470,7 +468,7 @@
       stopBtn.disabled = false;
 
       setStatus(
-        "ক্যামেরা চালু আছে। QR Code স্ক্যান করুন।",
+        "Back Camera চালু আছে। QR Code স্ক্যান করুন।",
         "#00ff88"
       );
 
@@ -481,7 +479,7 @@
       cameraRunning = false;
 
       setStatus(
-        "ক্যামেরা চালু হয়নি। Camera Permission দিন।",
+        "Back Camera চালু হয়নি। Camera Permission দিন।",
         "#ff5252"
       );
 
