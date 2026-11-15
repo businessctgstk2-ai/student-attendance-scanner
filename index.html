@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
   <title>Student Attendance Scanner</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -85,7 +86,7 @@
       padding: 14px;
       color: white;
       text-align: center;
-      background: rgba(0,0,0,0.78);
+      background: rgba(0,0,0,0.82);
     }
 
     #status {
@@ -135,6 +136,7 @@
 
     button:disabled {
       opacity: 0.5;
+      cursor: not-allowed;
     }
   </style>
 </head>
@@ -150,7 +152,10 @@
   <div class="scan-frame"></div>
 
   <div class="bottom-panel">
-    <div id="status">ক্যামেরা চালু করতে Start Camera চাপুন।</div>
+
+    <div id="status">
+      ক্যামেরা চালু করতে Start Camera চাপুন।
+    </div>
 
     <div id="studentInfo"></div>
 
@@ -159,31 +164,52 @@
       <button id="stopBtn" onclick="stopCamera()" disabled>Stop Camera</button>
       <button id="fullBtn" onclick="goFullScreen()">Full Screen</button>
     </div>
+
   </div>
 
 <script>
-  // Google Apps Script Web App URL
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzqP8mTF_tUokTCqnwEiH_Jf9VGVw4DXz6L-fbLi95LHuORCKoPPXI4X7TimUAsRbwG/exec";
 
+  // Google Apps Script Web App URL
+  const SCRIPT_URL =
+    "https://script.google.com/macros/s/AKfycbzqP8mTF_tUokTCqnwEiH_Jf9VGVw4DXz6L-fbLi95LHuORCKoPPXI4X7TimUAsRbwG/exec";
+
+
+  // Scanner Variables
   let scanner = null;
   let cameraRunning = false;
   let processing = false;
+
   let lastScanned = "";
   let lastScanTime = 0;
 
+  let scanCount = 0;
+
+
+  // HTML Elements
   const statusBox = document.getElementById("status");
   const studentInfo = document.getElementById("studentInfo");
+
   const startBtn = document.getElementById("startBtn");
   const stopBtn = document.getElementById("stopBtn");
 
+
+  // Status Message
   function setStatus(message, color = "white") {
     statusBox.textContent = message;
     statusBox.style.color = color;
   }
 
+
+  // Beep Sound
   function beep() {
+
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      const audioContext = new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )();
+
       const oscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
 
@@ -199,51 +225,89 @@
         oscillator.stop();
         audioContext.close();
       }, 180);
-    } catch (e) {
-      console.log("Beep error:", e);
+
+    } catch (error) {
+      console.log("Beep error:", error);
     }
+
   }
 
+
+  // Thank You Voice
   function thankYouVoice() {
+
     try {
+
       if ("speechSynthesis" in window) {
+
         const message = new SpeechSynthesisUtterance("Thank you");
+
         message.lang = "en-US";
         message.rate = 1;
+
         speechSynthesis.speak(message);
+
       }
-    } catch (e) {
-      console.log("Voice error:", e);
+
+    } catch (error) {
+      console.log("Voice error:", error);
     }
+
   }
 
+
+  // Server Request
   function scanWithServer(studentId) {
+
     return new Promise((resolve, reject) => {
-      const callbackName = "attendanceCallback_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+
+      const callbackName =
+        "attendanceCallback_" +
+        Date.now() +
+        "_" +
+        Math.floor(Math.random() * 10000);
+
       const script = document.createElement("script");
 
       const timeout = setTimeout(() => {
+
         cleanup();
+
         reject(new Error("সার্ভার থেকে উত্তর পাওয়া যায়নি।"));
-      }, 15000);
+
+      }, 20000);
+
 
       function cleanup() {
+
         clearTimeout(timeout);
+
         delete window[callbackName];
+
         if (script.parentNode) {
           script.parentNode.removeChild(script);
         }
+
       }
 
+
       window[callbackName] = function(response) {
+
         cleanup();
+
         resolve(response);
+
       };
 
+
       script.onerror = function() {
+
         cleanup();
+
         reject(new Error("সার্ভারের সাথে সংযোগ করা যায়নি।"));
+
       };
+
 
       script.src =
         SCRIPT_URL +
@@ -251,130 +315,257 @@
         "&studentId=" + encodeURIComponent(studentId) +
         "&callback=" + encodeURIComponent(callbackName);
 
+
       document.body.appendChild(script);
+
     });
+
   }
 
+
+  // QR Scan Success
   async function onScanSuccess(decodedText) {
+
+    if (!cameraRunning || processing) {
+      return;
+    }
+
     const now = Date.now();
 
-    if (processing) return;
-
-    // একই QR বারবার দ্রুত স্ক্যান হওয়া আটকাবে
-    if (decodedText === lastScanned && now - lastScanTime < 3000) {
+    // একই QR দ্রুত পুনরায় স্ক্যান আটকানো
+    if (
+      decodedText === lastScanned &&
+      now - lastScanTime < 3000
+    ) {
       return;
     }
 
     processing = true;
+
     lastScanned = decodedText;
     lastScanTime = now;
 
     setStatus("Attendance যাচাই হচ্ছে...", "#ffeb3b");
+
     studentInfo.textContent = "";
 
+
     try {
+
       const result = await scanWithServer(decodedText);
 
+
       if (result.success) {
+
         if (result.duplicate) {
-          setStatus(result.message || "আজকের Attendance আগে দেওয়া হয়েছে।", "#ff9800");
-          studentInfo.textContent =
-            (result.name || "") + " | Roll: " + (result.roll || "");
-        } else {
-          setStatus(result.message || "Attendance সফলভাবে সংরক্ষণ হয়েছে।", "#00ff88");
+
+          setStatus(
+            result.message || "আজকের Attendance আগে দেওয়া হয়েছে।",
+            "#ff9800"
+          );
 
           studentInfo.textContent =
             "Name: " + (result.name || "") +
             " | Roll: " + (result.roll || "") +
-            " | Class: " + (result.class || "");
+            " | Class: " + (result.studentClass || "");
+
+        } else {
+
+          scanCount++;
+
+          setStatus(
+            result.message || "Attendance সফলভাবে সংরক্ষণ হয়েছে।",
+            "#00ff88"
+          );
+
+          studentInfo.textContent =
+            "Name: " + (result.name || "") +
+            " | Roll: " + (result.roll || "") +
+            " | Class: " + (result.studentClass || "");
 
           beep();
+
           thankYouVoice();
+
         }
+
       } else {
-        setStatus(result.message || "Student পাওয়া যায়নি।", "#ff5252");
+
+        setStatus(
+          result.message || "Student পাওয়া যায়নি।",
+          "#ff5252"
+        );
+
+        studentInfo.textContent = "";
+
       }
 
     } catch (error) {
-      setStatus(error.message || "কিছু সমস্যা হয়েছে।", "#ff5252");
+
+      setStatus(
+        error.message || "কিছু সমস্যা হয়েছে।",
+        "#ff5252"
+      );
+
+    } finally {
+
+      // সার্ভার উত্তর দেওয়ার পর Scanner আবার প্রস্তুত
+      setTimeout(() => {
+
+        processing = false;
+
+        if (cameraRunning) {
+
+          setStatus(
+            "পরবর্তী QR Code স্ক্যান করুন। Total: " + scanCount,
+            "#00ff88"
+          );
+
+        }
+
+      }, 800);
+
     }
 
-    // পরবর্তী QR স্ক্যানের জন্য সামান্য বিরতি
-    setTimeout(() => {
-      processing = false;
-    }, 1200);
   }
 
+
+  // Start Camera
   async function startCamera() {
+
     if (cameraRunning) return;
 
     try {
+
       setStatus("ক্যামেরা চালু হচ্ছে...", "#ffeb3b");
 
       scanner = new Html5Qrcode("reader");
 
       await scanner.start(
+
         { facingMode: "environment" },
+
         {
+
           fps: 12,
-          qrbox: function(viewfinderWidth, viewfinderHeight) {
+
+          qrbox: function(
+            viewfinderWidth,
+            viewfinderHeight
+          ) {
+
             const size = Math.floor(
-              Math.min(viewfinderWidth, viewfinderHeight) * 0.72
+              Math.min(
+                viewfinderWidth,
+                viewfinderHeight
+              ) * 0.72
             );
-            return { width: size, height: size };
+
+            return {
+              width: size,
+              height: size
+            };
+
           },
+
           aspectRatio: 1.0
+
         },
+
         onScanSuccess,
+
         function() {}
+
       );
 
+
       cameraRunning = true;
+
       startBtn.disabled = true;
       stopBtn.disabled = false;
 
-      setStatus("ক্যামেরা চালু আছে। QR Code স্ক্যান করুন।", "#00ff88");
+      setStatus(
+        "ক্যামেরা চালু আছে। QR Code স্ক্যান করুন।",
+        "#00ff88"
+      );
 
     } catch (error) {
+
       console.error(error);
-      setStatus("ক্যামেরা চালু হয়নি। Camera Permission দিন।", "#ff5252");
+
+      cameraRunning = false;
+
+      setStatus(
+        "ক্যামেরা চালু হয়নি। Camera Permission দিন।",
+        "#ff5252"
+      );
+
     }
+
   }
 
+
+  // Stop Camera
   async function stopCamera() {
+
     if (!scanner || !cameraRunning) return;
 
     try {
+
+      cameraRunning = false;
+
       await scanner.stop();
+
       await scanner.clear();
 
       scanner = null;
-      cameraRunning = false;
+
       processing = false;
 
       startBtn.disabled = false;
       stopBtn.disabled = true;
 
       setStatus("ক্যামেরা বন্ধ আছে।", "white");
+
       studentInfo.textContent = "";
 
     } catch (error) {
+
       console.error(error);
-      setStatus("ক্যামেরা বন্ধ করতে সমস্যা হয়েছে।", "#ff5252");
+
+      setStatus(
+        "ক্যামেরা বন্ধ করতে সমস্যা হয়েছে।",
+        "#ff5252"
+      );
+
     }
+
   }
 
+
+  // Full Screen
   async function goFullScreen() {
+
     try {
+
       if (!document.fullscreenElement) {
+
         await document.documentElement.requestFullscreen();
+
       } else {
+
         await document.exitFullscreen();
+
       }
+
     } catch (error) {
-      console.log("Fullscreen not supported:", error);
+
+      console.log("Fullscreen error:", error);
+
     }
+
   }
+
 </script>
 
 </body>
