@@ -64,10 +64,10 @@
     .scan-frame {
       position: fixed;
       z-index: 5;
-      width: 72vw;
-      height: 72vw;
-      max-width: 360px;
-      max-height: 360px;
+      width: 60vmin;
+      height: 60vmin;
+      max-width: 320px;
+      max-height: 320px;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -202,9 +202,7 @@
 
   // Beep Sound
   function beep() {
-
     try {
-
       const audioContext = new (
         window.AudioContext ||
         window.webkitAudioContext
@@ -229,30 +227,23 @@
     } catch (error) {
       console.log("Beep error:", error);
     }
-
   }
 
 
   // Thank You Voice
   function thankYouVoice() {
-
     try {
-
       if ("speechSynthesis" in window) {
-
         const message = new SpeechSynthesisUtterance("Thank you");
 
         message.lang = "en-US";
         message.rate = 1;
 
         speechSynthesis.speak(message);
-
       }
-
     } catch (error) {
       console.log("Voice error:", error);
     }
-
   }
 
 
@@ -270,16 +261,12 @@
       const script = document.createElement("script");
 
       const timeout = setTimeout(() => {
-
         cleanup();
-
         reject(new Error("সার্ভার থেকে উত্তর পাওয়া যায়নি।"));
-
       }, 20000);
 
 
       function cleanup() {
-
         clearTimeout(timeout);
 
         delete window[callbackName];
@@ -287,25 +274,18 @@
         if (script.parentNode) {
           script.parentNode.removeChild(script);
         }
-
       }
 
 
       window[callbackName] = function(response) {
-
         cleanup();
-
         resolve(response);
-
       };
 
 
       script.onerror = function() {
-
         cleanup();
-
         reject(new Error("সার্ভারের সাথে সংযোগ করা যায়নি।"));
-
       };
 
 
@@ -319,7 +299,6 @@
       document.body.appendChild(script);
 
     });
-
   }
 
 
@@ -443,22 +422,28 @@
 
       await scanner.start(
 
-        { facingMode: "environment" },
+        // Laptop-এর সামনের ক্যামেরা
+        { facingMode: "user" },
 
         {
 
-          fps: 12,
+          // আগের 12 থেকে 20 করা হয়েছে
+          fps: 20,
 
+          // ছোট QR Scan Area
           qrbox: function(
             viewfinderWidth,
             viewfinderHeight
           ) {
 
-            const size = Math.floor(
-              Math.min(
-                viewfinderWidth,
-                viewfinderHeight
-              ) * 0.72
+            const size = Math.min(
+              320,
+              Math.floor(
+                Math.min(
+                  viewfinderWidth,
+                  viewfinderHeight
+                ) * 0.60
+              )
             );
 
             return {
