@@ -10,9 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html, body {
       margin: 0;
@@ -64,10 +62,10 @@
     .scan-frame {
       position: fixed;
       z-index: 5;
-      width: 60vmin;
-      height: 60vmin;
-      max-width: 320px;
-      max-height: 320px;
+      width: 72vw;
+      height: 72vw;
+      max-width: 360px;
+      max-height: 360px;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -234,7 +232,8 @@
   function thankYouVoice() {
     try {
       if ("speechSynthesis" in window) {
-        const message = new SpeechSynthesisUtterance("Thank you");
+        const message =
+          new SpeechSynthesisUtterance("Thank you");
 
         message.lang = "en-US";
         message.rate = 1;
@@ -294,7 +293,6 @@
         "?action=scan" +
         "&studentId=" + encodeURIComponent(studentId) +
         "&callback=" + encodeURIComponent(callbackName);
-
 
       document.body.appendChild(script);
 
@@ -363,7 +361,6 @@
             " | Class: " + (result.studentClass || "");
 
           beep();
-
           thankYouVoice();
 
         }
@@ -394,12 +391,10 @@
         processing = false;
 
         if (cameraRunning) {
-
           setStatus(
             "পরবর্তী QR Code স্ক্যান করুন। Total: " + scanCount,
             "#00ff88"
           );
-
         }
 
       }, 800);
@@ -409,24 +404,101 @@
   }
 
 
-  // Start Camera - MOBILE BACK CAMERA
+  // Back Camera নির্বাচন
+  async function getBackCameraId() {
+
+    let temporaryStream = null;
+
+    try {
+
+      // ক্যামেরার অনুমতি নিয়ে ক্যামেরার নাম শনাক্ত করা
+      temporaryStream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: {
+              ideal: "environment"
+            }
+          },
+          audio: false
+        });
+
+      // সাময়িক ক্যামেরা বন্ধ
+      temporaryStream.getTracks().forEach(track => track.stop());
+
+      temporaryStream = null;
+
+      // সব ক্যামেরার তালিকা
+      const cameras = await Html5Qrcode.getCameras();
+
+      if (!cameras || cameras.length === 0) {
+        throw new Error("কোনো ক্যামেরা পাওয়া যায়নি।");
+      }
+
+      console.log("Available cameras:", cameras);
+
+      // Back / Rear Camera খোঁজা
+      const backCamera = cameras.find(camera =>
+        /back|rear|environment|facing back|world/i.test(camera.label)
+      );
+
+      if (backCamera) {
+        console.log("Selected Back Camera:", backCamera.label);
+        return backCamera.id;
+      }
+
+      // শুধু একটি ক্যামেরা থাকলে সেটি ব্যবহার
+      if (cameras.length === 1) {
+        return cameras[0].id;
+      }
+
+      // নাম দিয়ে Back Camera শনাক্ত না হলে
+      // environment mode দিয়ে চেষ্টা করা হবে
+      return null;
+
+    } catch (error) {
+
+      if (temporaryStream) {
+        temporaryStream.getTracks().forEach(track => track.stop());
+      }
+
+      console.log("Camera detection:", error);
+
+      return null;
+    }
+
+  }
+
+
+  // Start Camera - Back Camera Only
   async function startCamera() {
 
     if (cameraRunning) return;
 
+    startBtn.disabled = true;
+
     try {
 
-      setStatus("মোবাইলের Back Camera চালু হচ্ছে...", "#ffeb3b");
+      setStatus("Back Camera খোঁজা হচ্ছে...", "#ffeb3b");
+
+      const backCameraId = await getBackCameraId();
 
       scanner = new Html5Qrcode("reader");
 
+      const cameraConfig = backCameraId
+        ? backCameraId
+        : {
+            facingMode: {
+              exact: "environment"
+            }
+          };
+
+      setStatus("Back Camera চালু হচ্ছে...", "#ffeb3b");
+
       await scanner.start(
 
-        // মোবাইলের পেছনের ক্যামেরা
-        { facingMode: "environment" },
+        cameraConfig,
 
         {
-
           fps: 20,
 
           qrbox: function(
@@ -434,19 +506,16 @@
             viewfinderHeight
           ) {
 
-            const size = Math.min(
-              320,
-              Math.floor(
-                Math.min(
-                  viewfinderWidth,
-                  viewfinderHeight
-                ) * 0.60
-              )
+            const size = Math.floor(
+              Math.min(
+                viewfinderWidth,
+                viewfinderHeight
+              ) * 0.60
             );
 
             return {
-              width: size,
-              height: size
+              width: Math.min(size, 320),
+              height: Math.min(size, 320)
             };
 
           },
@@ -474,12 +543,24 @@
 
     } catch (error) {
 
-      console.error(error);
+      console.error("Camera error:", error);
 
       cameraRunning = false;
 
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+
+      if (scanner) {
+        try {
+          await scanner.clear();
+        } catch (e) {
+          console.log(e);
+        }
+        scanner = null;
+      }
+
       setStatus(
-        "Back Camera চালু হয়নি। Camera Permission দিন।",
+        "Back Camera চালু হয়নি। Camera Permission দিন অথবা ফোনের Back Camera পরীক্ষা করুন।",
         "#ff5252"
       );
 
@@ -498,7 +579,6 @@
       cameraRunning = false;
 
       await scanner.stop();
-
       await scanner.clear();
 
       scanner = null;
@@ -532,19 +612,13 @@
     try {
 
       if (!document.fullscreenElement) {
-
         await document.documentElement.requestFullscreen();
-
       } else {
-
         await document.exitFullscreen();
-
       }
 
     } catch (error) {
-
       console.log("Fullscreen error:", error);
-
     }
 
   }
